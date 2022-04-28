@@ -1,0 +1,436 @@
+---
+title: "Covid Exploratory Analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(rvest)
+library(tidyverse)
+library(dplyr)
+library(gam)
+library(usmap)
+```
+
+
+### Who is getting tested?
+
+There have been many studies done recently in regards to the COVID-19 pandemic. It is crucial for us to learn as much as we can about the virus, figure out successful preventative measures against it, figure out who is at risk, and learn more about its adverse outcomes. These studies often compare those who have tested positive for COVID-19 and those who have tested negative, and then generalize their findings to those that have COVID and those that do not. However, the groups that test positive and the groups that test negative are often very different and cannot be compared. It is important to look at the reason why people are getting tested and not just the test result. In this project I am going to take a closer look at testing numbers and positive cases in different states and see if all tests were created equal.
+
+
+### Some Interesting Studies I Have Seen:
+
+[This study](https://www.cdc.gov/mmwr/volumes/71/wr/mm7106e1.htm) done in California looked at the relationship between test results and mask usage. They called people who had recently gotten tested and asked them about their mask wearing behavior in the past weeks. They found that those who tested positive were wearing masks less often, and therefore concluded that mask wearing is associated with a lower chance of getting COVID-19. Mask wearing definitely protects people from getting the virus and is a great preventative measure, however the way this study is comparing two very different groups of people. 
+
+Interestingly, they were able to ask the participants the reason they were getting tested. From the positive group, around 78% were experiencing symptoms and 11% were doing it for a routine screening. In the negative group, around 43% were getting tested for a routine screening and around 17% were getting tested for a medical procedure. Only 17% of the negative group was experiencing symptoms. 
+
+People get tested for many different reasons, which range from going to visit their grandparents and wanting a negative test to feel safe to having been in exposed and having symptoms. People that get tested routinely for personal safety or peace of mind probably have different behaviors than those that are getting tested because they have symptoms. But they are also different from the general population that is not getting tested routinely.
+
+
+Another [study](https://www.bmj.com/content/376/bmj-2021-066809) from Norway looked at healthcare use in the months after getting a positive covid test and found there to be an increased use of healthcare in preschool aged children after getting COVID-19. They compared children who had tested positive with those who had tested negative and those who did not get tested and found an increased use of healthcare in the children that had tested positive. They concluded preschool aged children took longer to recover from COVID because of the increase in visits to healthcare.
+
+A different [study](https://www.thelancet.com/journals/landia/article/PIIS2213-8587(22)00044-4/fulltext) looked at the risk of getting diabetes after contracting COVID, using data from the US Department of Veterans Affair. They had a cases group (those who had tested positive for COVID-19 and survived for 30 days) and they compared them to a contemporary control group and a historical control group. All participants did not have diabetes before being part of the study, and their outcomes were incident diabetes and antihyperglycaemic use. They found an increased risk in both incident diabetes and antihyperglycaemic use. They concluded that COVID-19 was correlated with getting diabetes.
+
+
+All of these studies (and many more) are comparing two groups: those with COVID and those without. However, these are two different groups that might not be as comparable as we think they are. Those that test negative for covid and those that test positive are often getting tested for different reasons. As the first study showed, those that test positive are often getting tested because they have symptoms, and those that test negative are often getting tested for a routine screening or personal reasons. People that get tested without having reason to think they have the virus probably have different behaviors than those that get tested because they have symptoms. They might be more concerned for their health and safety and take more precautions against the virus, which includes mask wearing and getting vaccinated. They also might have a lifestyle that involves taking social precautions, such as avoiding crowded settings and staying home more. They also might interact with the healthcare system more and therefore have diagnoses that they might otherwise not have gotten. The first study had access to vaccination data, and 32% of the negative group was vaccinated, where only 17% of the positive group was vaccinated. The vaccine not only protects people against contracting COVID-19 but also protects them from the more adverse outcomes such as being hospitalized or death. People that get the vaccine are probably more likely to get tested for personal assurance. A group of people that is being extra responsible and taking covid tests for personal safety does not seem comparable with the group of people that is getting tested with reason to believe the have the virus.
+
+In this project I want to take a closer look at COVID-19 testing in the United States and the different trends that are observed through time. How does testing relate to adverse outcomes? Is the ratio of positive to negative tests similar throughout? One missing piece of information that would be really interesting to have access to is the reason why people in these studies are getting tested for in the first place. 
+
+
+## Exploratory Analysis
+
+The national-history.csv comes from [this page](https://covidtracking.com/data/national). The dataset was collected by The    COVID Tracking Project by the Atlantic. It contains daily information about COVID in the United States from January 13, 2020 until March 7, 2021. It contains information on the number of tests, number of positive tests, number of people in the hospital, in the ICU, and in ventilators. 
+
+```{r}
+data_covid <- read_csv("national-history.csv", show_col_types = FALSE)
+head(data_covid)
+```
+
+```{r}
+ggplot(data_covid, aes(x = totalTestResultsIncrease, y = positiveIncrease)) +
+    geom_point() +
+    ggtitle("National Testing Data (Jan 13, 2020 - March 7, 2021)") +
+    xlab("Increase in Tests") + 
+    ylab("Increase in Positive Tests")
+```
+
+It seems that as the number of testing increases, so does the number of positive cases. This makes sense, as more tests being available and being taken and covid continues to spread. 
+
+Census data comes from this [page](https://en.wikipedia.org/wiki/List_of_U.S._states_and_territories_by_population
+).
+Download the state- wise population data from 2020 census to calculate state proportions:
+```{r}
+url <- "https://en.wikipedia.org/wiki/List_of_U.S._states_and_territories_by_population"
+content <- read_html(url)
+tables <- content %>%
+  html_table(fill = TRUE)
+# want the first table with the populations
+
+table <- tables[[1]]
+# remove the first element 
+table <- table[-1,]
+# want 2020 population, which is the 4th column
+population <- table %>%
+  select(3,4) %>% 
+  rename(pop = "Census population[7][a]",
+         state = "State or territory")
+head(population)
+```
+
+The us_states_covid19_daily.csv from from [this page](https://www.kaggle.com/datasets/sudalairajkumar/covid19-in-usa?select=us_states_covid19_daily.csv) and it contains daily state-wise information on COVID-19. It ranges from January 2020 until December 2020.
+
+```{r}
+covid <- read_csv("us_states_covid19_daily.csv", show_col_types = FALSE)
+# remove territories and pick relevant columns
+covid <- covid %>%
+  select(date, state, positive, negative, totalTestResults, hospitalizedCurrently, hospitalizedCumulative,inIcuCurrently, inIcuCumulative, onVentilatorCumulative, recovered, death) %>%
+  filter(state != 'GU', state != 'MP', state != 'PR', state != 'VI', state != 'DC', state != 'AS')
+covid[is.na(covid)] <- 0 
+head(covid)
+```
+Save the information from the last date available, as it contains the most updated added totals of cases and testing information.
+```{r}
+# change the state name abbreviations to their full names
+latest_covid <- covid %>%
+  filter(date == 20201206) %>%
+  select(-date)
+for (i in 1:dim(latest_covid)[1]){
+  x = latest_covid$state[i]
+  latest_covid$state[i] = state.name[match(x,state.abb)]
+}
+head(latest_covid)
+```
+
+Join the covid statewide data with the population of each state to calculate proportions and compare states:
+```{r}
+latest_covid_testing <- merge(latest_covid, population, by = 'state')
+latest_covid_testing$pop <- as.numeric(gsub(",","",latest_covid_testing$pop))
+latest_covid_testing <- latest_covid_testing %>%
+  mutate(prop_tested = totalTestResults/pop,
+         prop_positive = positive/totalTestResults,
+         prop_death = death/pop,
+         prop_hospitalized = hospitalizedCumulative/pop,
+         prop_negative = negative/totalTestResults,
+         )
+head(latest_covid_testing)
+```
+
+Graph pairs plot to see if there are any interesting relationships:
+
+```{r}
+cov <- latest_covid_testing
+cov <- cov %>% 
+  select(-state, -pop, -inIcuCurrently, -hospitalizedCurrently)
+pairs(cov)
+```
+There are some interesting relationships that appear in the pairs plot. Proportion of people tested and negative tests seem to negatively correlate, while total deaths and positive tests are positively correlated. Total test results and death are positively correlated, which makes sense as more cases means more chance of adverse outcomes. There is also a positive correlation between the proportion that is hospitalized and the proportion that dies, which also makes sense for the same reason. 
+
+
+## Taking a closer look at some of these relationships: 
+
+```{r}
+ggplot(latest_covid_testing, aes(x = totalTestResults, y = death)) +
+    geom_point() +
+    geom_smooth() +
+    ggtitle("Relationship Between Number of Test Result and Total Deaths") +
+    xlab("Total Test Results") + 
+    ylab("Total Deaths")
+```
+
+The graph above shows a positive correlation between test results and total deaths. This makes sense, as more tests being taken indicates a higher population or a higher amount of people with COVID. 
+The graph below shows the relationship between the proportion of each state's population that has been hospitalized due to COVID and the proportion of each state's population that has died from COVID. The graph has a small dip in the beginning, which means that having people hospitalized decreases deaths at first, but then there is an upwards trend when the proportion hospitalized is greater than aroud 0.0015 of the population. Then being hospitalized is associated with death, which is the adverse outcome.
+
+```{r}
+ggplot(latest_covid_testing, aes(x = prop_hospitalized, y = prop_death)) +
+    geom_point() +
+    geom_smooth() +
+    ggtitle("Proportion of People Hospitalized vs. Proportion of People that Die") +
+    xlab("Proportion Hospitalized") + 
+    ylab("Proportion Died")
+```
+The graph below shows the relationship between the proportion of each state's population and the proportion of that state that has tested positive. 
+
+```{r}
+ggplot(latest_covid_testing, aes(x = prop_tested, y = prop_positive)) +
+    geom_point() +
+    geom_smooth() +
+    ggtitle("Proportion Tested vs. Proportion Positive") +
+    xlab("Proportion Tested") + 
+    ylab("Proportion Positive")
+```
+
+
+This relationship is really interesting, as the more people that get tested the lower the number of tests that come out positive. Here is where it would be really interesting to find out the reason that people are getting tested. Are people being responsible and doing their routine check? Are they getting tested before they go home to visit their parents? Are they getting tested because they have symptoms? If less tests means that more of them are positive, then those getting tested probably had more symptoms.
+
+The proportion of population tested goes over 1 because some in some states there have been more number of tests than the total population of the state (due to people getting tested more than once). The less that people get tested the more positive results there are, which is very interesting. 
+
+Below there are two maps of the United States with these trends. The blue map is colored in based on what proportion of the population in each state has been tested. The red map is colored based on what proportion of the tests taken are positive. We can see that the colors are almost opposite, the states with high testing rates have low positive rates and vice versa.
+
+```{r}
+plot_usmap(data = latest_covid_testing, values = 'prop_tested', color = 'blue') +
+  scale_fill_continuous(low = "white", high = "blue", name = "Propostion of Population Tested") +
+  labs(title = "United States Testing COVID trends", subtitle = "Testing Rate") +
+  theme(legend.position = "right")
+
+plot_usmap(data = latest_covid_testing, values = 'prop_positive', color = 'red') +
+  scale_fill_continuous(low = "white", high = "red", name = "Positive Tests Rate") +
+  labs(title = "United States Testing COVID  Trends", subtitle = "Proportion of Tests that are Positive") +
+  theme(legend.position = "right")
+```
+
+
+# Hypothesis testing: is there a difference in the number of positive tests between the high testing states and low testing states?
+
+Null Hypothesis: there is no difference in the proportion of positive tests between the states with high rate of testing and low rate testing
+Alternative Hypothesis: there is a difference in the proportion of positive tests between the states with high rate of testing and low rate of testing
+The rate of state testing is determined by the median proportion of testing. The states are divideed into two categories, high and low testing, based on how they stand in comparison to the median.
+
+```{r}
+# find the median value of testing
+middle <- median(latest_covid_testing$prop_tested)
+latest_covid_testing <- latest_covid_testing %>%
+  mutate(high_testing = as.numeric(prop_tested>middle))
+
+# find states with high testing proportions
+high_test_idxs <- latest_covid_testing$high_testing==1
+high_testing_mean_positive<-latest_covid_testing[high_test_idxs,]$prop_positive
+high_testing_num_tests<-sum(latest_covid_testing[high_test_idxs,]$totalTestResults)
+high_testing_num_pos<-sum(latest_covid_testing[high_test_idxs,]$positive)
+high_testing_num_pos/high_testing_num_tests
+
+low_test_idxs<-latest_covid_testing$high_testing==0
+low_testing_mean_positive<-latest_covid_testing[low_test_idxs,]$prop_positive
+low_testing_num_tests<-sum(latest_covid_testing[low_test_idxs,]$totalTestResults)
+low_testing_num_pos<-sum(latest_covid_testing[low_test_idxs,]$positive)
+low_testing_num_pos/low_testing_num_tests
+```
+
+
+```{r}
+plot_usmap(data = latest_covid_testing, values = 'high_testing', color = 'red') +
+  scale_fill_continuous(low = "white", high = "red", name = "High Testing") +
+  labs(title = "United States COVID Testing, by Testing Rate") +
+  theme(legend.position = "right")
+
+```
+
+Test for difference in proportions:
+```{r}
+number_tests<-c(high_testing_num_tests, low_testing_num_tests)
+positive_tests<-c(high_testing_num_pos, low_testing_num_pos)
+p<-prop.test(positive_tests, number_tests, alternative = "two.sided")
+p
+```
+
+A p-value of less than 2.2e-16 means that we have evidence to reject the null hypothesis. This means that there is a difference in the number of positive tests between the states with high rate testing and low rate testing. The default confidence level is 95% which means that the level of type 1 error (rejecting the null when it is correct) is 0.05. The confidence interval is [-0.0379, -0.0396], which is the estimate of the difference of proportions. 
+
+
+Logistic regression to predict high or low proportion of testing from number of positive tests:
+```{r}
+model <- glm( high_testing ~ 1 + prop_positive, data = latest_covid_testing, family = binomial)
+summary(model)$coef
+
+```
+
+```{r}
+predicted<-predict(model, type='response', newdata = latest_covid_testing )
+predicted <- ifelse(predicted > 0.5, 1, 0)
+sum(latest_covid_testing$high_testing != predicted)
+```
+We can estimate if the state had high or low testing (for 35 states) using only the proportion of the tests that were positive.
+
+Here we train a regression model using the natural splines on the proportion tested to estimate the proportion of tests that will come out positive. 
+
+```{r}
+# ns means natural splines on the regression model
+# fits non linear model
+model1 <- lm(prop_positive ~ ns(prop_tested, df=2), data =latest_covid_testing)
+summary(model1)
+sum( model1$residuals^2 )
+```
+
+Here we use a different day to test this model and predict the proportion of positive tests:
+```{r}
+latest_covid2 <- covid %>%
+  filter(date == 20201205) %>%
+  select(-date)
+for (i in 1:dim(latest_covid2)[1]){
+  x = latest_covid2$state[i]
+  latest_covid2$state[i] = state.name[match(x,state.abb)]
+}
+latest_covid_testing2 <- merge(latest_covid2, population, by = 'state')
+latest_covid_testing2$pop <- as.numeric(gsub(",","",latest_covid_testing2$pop))
+latest_covid_testing2 <- latest_covid_testing2 %>%
+  mutate(prop_tested = totalTestResults/pop,
+         prop_positive = positive/totalTestResults,
+         prop_death = death/pop,
+         prop_hospitalized = hospitalizedCumulative/pop,
+         prop_negative = negative/totalTestResults,
+         )
+```
+
+Make predictions and calculate the difference between the prediction and the actual value:
+```{r}
+predicted<-predict(model1, type='response', newdata = latest_covid_testing2 )
+latest_covid_testing2 <- latest_covid_testing2 %>%
+  mutate(estimated_prop_positive = predicted)
+latest_covid_testing2 <- latest_covid_testing2 %>%
+  mutate(diff = abs(prop_positive-estimated_prop_positive))
+head(latest_covid_testing2)
+```
+
+```{r}
+MSE = (sum(latest_covid_testing2$diff)^2)/50
+MSE
+```
+
+The mean squared error of these predictions is around 0.035. The MSE on the original data was around 0.067. This means that the model is making pretty good estimates. 
+If one can estimate the proportion of positive tests from the proportion that is getting tested, this means that the number of tests affects the proportion of negative ones. The more tests that happen, the less positive tests there are. This needs to be taken into consideration when doing studies and comparing cases in states or comparing positive and negative cases. There also might be many more positive cases that are not being documented due to the increasing prevalence of at-home tests. 
+
+
+# Taking a look at vaccinations
+
+Vaccinations are a very important factor because they have an effect on the number of cases as well as the adversity of the outcomes. The vaccine is supposed to provide protection against COVID, so let's take a look at its effects.
+
+Vaccination data comes from [this page](https://www.kaggle.com/datasets/paultimothymooney/usa-covid19-vaccinations). It includes statewide daily information on vaccines, including the total number of vaccines given out and the number of people that are fully vaccinated in each state. 
+Read in the vaccination data:
+```{r}
+vax <- read_csv("us_state_vaccinations.csv", show_col_types = FALSE)
+# turn missing info into 0s
+# talk about how this mgiht be an issue 
+vax[is.na(vax)] <- 0 
+# select relevant columns and today's date
+# dataset is updated daily
+vax <- vax %>%
+  select(date, location, total_vaccinations, people_vaccinated, people_fully_vaccinated_per_hundred, people_fully_vaccinated) %>%
+  filter(location != "Guam", location != "American Samoa", location != "Bureau of Prisons", location != "Dept of Defense", location != "Federated States of Micronesia", location != "Indian Health Svc", location != "Marshall Islands", location != "Northern Mariana Islands", location != "Republic of Palau", location != "Puerto Rico", location != "Virgin Islands", location != "Veterans Health", location != "United States", location != "District of Columbia") %>%
+  rename(state = 'location')
+i = vax$state=="New York State" 
+vax[i,]$state = "New York"
+
+today_vax <- vax %>%
+  filter(date == "2022-04-04") 
+head(today_vax)
+```
+
+
+Joining the vaccination dataset with the testing dataset, organizing by date and looking at patterns in the data:
+
+```{r}
+daily_vax <- vax %>%
+  group_by(date) %>%
+  summarise(total_vax = sum(total_vaccinations),
+            fully_vax = sum(people_fully_vaccinated))
+
+covid_vax <- merge(data_covid, daily_vax, by = "date")
+ggplot(covid_vax, aes(x = date, y = total_vax)) +
+    geom_point() +
+    ggtitle("Vaccinations Throguh Time") +
+    xlab("Date") + 
+    ylab("Total Vaccinations")
+```
+We can see in the graph above that vaccinations are increasing through time. 
+Below we look at the relationship between people getting vaccinated and the increase in positive cases.
+
+```{r}
+ggplot(covid_vax, aes(x = fully_vax, y = positiveIncrease)) +
+    geom_point() +
+    geom_smooth() +
+    ggtitle("Proportion Tested vs. Proportion Positive") +
+    xlab("Total Fully Vaccinated") + 
+    ylab("Increase in Positive Cases")
+```
+
+We can see that as more people get fully vaccinated, the increase in positive cases gets lower. 
+
+
+Read in updated covid information on cases. Data from [this page](https://github.com/nytimes/covid-19-data/blob/master/us-states.csv). It is a less comprehensive dataset that the one from The COVID Tracking Project, but includes helpful information such as number of cases and deaths, daily, by state. 
+```{r}
+covid_states <- read.table("us-states.txt",sep=",",header=T)
+covid_states <- covid_states %>%
+  filter(state != "Guam", state != "American Samoa", state != "Bureau of Prisons", state != "Dept of Defense", state != "Federated States of Micronesia", state != "Indian Health Svc", state != "Marshall Islands", state != "Northern Mariana Islands", state != "Republic of Palau", state != "Puerto Rico", state != "Virgin Islands", state != "Veterans Health", state != "United States", state != "District of Columbia") 
+today_vid = covid_states %>%
+  filter(date == "2022-04-04")
+head(today_vid)
+```
+
+Merging the vaccination dataset with the covid dataset:
+
+```{r}
+d <- merge(today_vax, today_vid, by = 'state')
+d1 <- merge(d, population, by = 'state')
+d1 <- d1 %>%
+  select(-fips, -date.y, - date.x)
+d1$pop <- as.numeric(gsub(",","",d1$pop))
+covid_new = d1 %>%
+  mutate(vax_prop = people_fully_vaccinated/pop,
+         cases_prop = cases/pop,
+         deaths_prop = deaths/pop,
+         prop_positive_death = deaths/cases)
+d2 <- covid_new %>%
+  select(-state)
+pairs(d2)
+```
+From this pairs plot there are some clear relationships. For example, there is a negative correlation between the proportion of the population that is vaccinated and the proportion of the population that gets covid (or tests positive). There is a pretty clear positive correlation between the population of a state and the number of deaths. But not to the proportion of deaths, which makes sense as we adjust for population size. This same relationship is seen between cases and population. 
+
+**Taking a closer look at interesting relationships:**
+
+
+```{r}
+ggplot(covid_new, aes(x = pop, y = deaths)) +
+    geom_point() +
+    geom_smooth(method = "lm") +
+    ggtitle("Population vs. Deaths") +
+    xlab("State Population") + 
+    ylab("Number of Deaths")
+```
+There is a clear relationship between the size of the population of a state and the number of deaths by covid. This makes sense, as having a larger population means having more cases and therefore having more adverse outcomes. 
+Below is the same relationship but adjusting for population size, the linear relationship no longer exists. The same thing happens for the number of cases when we adjust for population.
+
+```{r}
+ggplot(covid_new, aes(x = pop, y = deaths_prop)) +
+    geom_point() +
+    geom_smooth(method = "lm") +
+    ggtitle("Proportion Vaccinated vs. Proportion Positive") +
+    xlab("State Population") + 
+    ylab("Number of Deaths")
+```
+This graph shows the relationship between proportion of people that are vaccinated and proportion of cases in the population:
+
+```{r}
+ggplot(covid_new, aes(x = vax_prop, y = cases_prop)) +
+    geom_point() +
+    geom_smooth(method = "lm") +
+    ggtitle("Proportion Vaccinated vs. Proportion Positive") +
+    xlab("Proportion of People Vaccinated") + 
+    ylab("Proportion of Positive Cases")
+```
+We can see that proportion of cases decrease as the proportion of people that are vaccinated increases.
+The graph below shows the relationship between the proportion of people that are vaccinated and the proportion that die. A similar relationship is seen here, where a higher proportion of people vaccinated is correlated with a lower proportion of deaths.
+```{r}
+ggplot(covid_new, aes(x = vax_prop, y = deaths_prop)) +
+    geom_point() +
+    geom_smooth(method = "lm") +
+    ggtitle("Proportion Vaccinated vs. Proportion Positive") +
+    xlab("Proportion of People Vaccinated") + 
+    ylab("Proportion of Deaths")
+```
+
+What about adverse outcomes in those that have tested positive? This graph plots the relationship between the proportion of the population that is vaccinated and the proportion of people that die from those that have tested positive. There is a negative trend in this graph, which entails that the vaccine offers some protection against adverse outcomes even after testing positive. 
+
+```{r}
+ggplot(covid_new, aes(x = vax_prop, y = prop_positive_death)) +
+    geom_point() +
+    geom_smooth(method = "lm") +
+    ggtitle("Proportion Vaccinated vs. Proportion Positive") +
+    xlab("Proportion of People Vaccinated") + 
+    ylab("Proportion of Deaths")
+```
+
+
+
+In this last part we have seen that the vaccine does have positive impacts on COVID. This includes both protection against testing positive for it and protection against its adverse outcomes. This is another very important factor that needs to be included when comparing different groups.
+
+Observational studies are very important and provide a great deal of insight and information that is helpful and necessary. However, we need to take some results with a grain of salt and take a closer look at what factors are playing a role. We can only look at what has happened, and that is never random. People are not getting randomly tested for COVID, they are doing so because of symptoms or personal reasons. This means that we have to be careful when comparing the groups because they might not be comparable.
+
+
